@@ -371,6 +371,7 @@ class GrimmoryRepository @Inject constructor(
         clearTorBoxBookIndexCache()
 
         skipPersistentBookCacheNextFetch = true
+        java.io.File(context.cacheDir, "book-index-cache").listFiles()?.forEach { it.delete() }
     }
 
     private fun cacheFileForBooks(source: BookSource, serverUrl: String, libraryId: String?): java.io.File {

@@ -256,6 +256,7 @@ class LibraryCacheRepository @Inject constructor(
     }
 
     suspend fun invalidateAndRefresh(connectionIds: List<String>? = null) {
+        aggregator.invalidateCaches()
 
         progressCarryover = runCatching {
             dao.getInProgressOnce(limit = 2000).associateBy { it.cacheKey }
