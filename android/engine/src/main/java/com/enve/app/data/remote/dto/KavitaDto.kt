@@ -113,6 +113,7 @@ data class KavitaSortOptionsDto(
 @Serializable
 data class KavitaVolumeDto(
     val id: Int,
+    val minNumber: Double = 0.0,
     val chapters: List<KavitaChapterDto> = emptyList(),
 )
 
@@ -120,6 +121,14 @@ data class KavitaVolumeDto(
 data class KavitaChapterDto(
     val id: Int,
     val pages: Int = 0,
+    val pagesRead: Int = 0,
+    val range: String? = null,
+    val minNumber: Double = 0.0,
+    val sortOrder: Double = 0.0,
+    val title: String? = null,
+    val titleName: String? = null,
+    val summary: String? = null,
+    val writers: List<KavitaNamedDto> = emptyList(),
 )
 
 @Serializable

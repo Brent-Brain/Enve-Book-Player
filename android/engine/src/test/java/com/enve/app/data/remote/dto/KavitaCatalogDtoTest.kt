@@ -1,6 +1,11 @@
 package com.enve.app.data.remote.dto
 
+import com.enve.app.data.repository.kavitaBookId
+import com.enve.app.data.repository.kavitaChapterId
+import com.enve.app.data.repository.kavitaChapterTitle
 import com.enve.app.data.repository.kavitaPageNum
+import com.enve.app.data.repository.kavitaSeriesId
+import com.enve.app.data.repository.kavitaSeriesNumber
 import com.enve.app.data.repository.kavitaReaderFormat
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.int
@@ -82,6 +87,34 @@ class KavitaCatalogDtoTest {
 
         assertEquals(57, volumes.first().chapters.first().id)
         assertEquals(listOf(3, 3), volumes.first().chapters.map { it.pages })
+    }
+
+    @Test
+    fun resolvesSeriesBooksFromCalibreVolumes() {
+        val volumes = json.decodeFromString<List<KavitaVolumeDto>>(
+            """
+            [{"id":1,"minNumber":2,"name":"2","chapters":[{"id":11,"pages":300,"titleName":"Second Book","range":"2"}]},
+             {"id":2,"minNumber":1.5,"chapters":[{"id":12,"pages":10,"range":"1.5"}]},
+             {"id":3,"minNumber":-100000,"chapters":[{"id":13,"minNumber":4,"pages":10}]}]
+            """,
+        )
+        val (first, second, loose) = volumes
+
+        assertEquals("2", kavitaSeriesNumber(first, first.chapters.single()))
+        assertEquals("1.5", kavitaSeriesNumber(second, second.chapters.single()))
+        assertEquals("4", kavitaSeriesNumber(loose, loose.chapters.single()))
+        assertEquals("Second Book", kavitaChapterTitle("Saga", first, first.chapters.single()))
+        assertEquals("Saga Book 1.5", kavitaChapterTitle("Saga", second, second.chapters.single()))
+    }
+
+    @Test
+    fun roundTripsCompositeBookIds() {
+        val id = kavitaBookId(20, 25)
+
+        assertEquals(20, kavitaSeriesId(id))
+        assertEquals(25, kavitaChapterId(id))
+        assertEquals(20, kavitaSeriesId("20"))
+        assertNull(kavitaChapterId("20"))
     }
 
     @Test

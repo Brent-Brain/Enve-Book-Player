@@ -62,6 +62,7 @@ import java.time.OffsetDateTime
 import java.time.ZoneOffset
 import java.net.URI
 import java.util.concurrent.TimeUnit
+import retrofit2.Response
 import kotlin.math.round
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
@@ -116,6 +117,29 @@ internal fun kavitaReaderFormat(format: Int): String? = when (format) {
     KavitaMangaFormat.PDF -> "PDF"
     else -> null
 }
+
+internal fun kavitaBookId(seriesId: Int, chapterId: Int): String = "$seriesId:$chapterId"
+
+internal fun kavitaSeriesId(bookId: String): Int = bookId.substringBefore(':').toInt()
+
+internal fun kavitaChapterId(bookId: String): Int? = bookId.substringAfter(':', "").toIntOrNull()
+
+private const val KAVITA_LOOSE_LEAF_VOLUME = -100000.0
+
+private fun kavitaNumber(value: Double): String? =
+    value.takeIf { it > 0.0 && it != KAVITA_LOOSE_LEAF_VOLUME }?.let {
+        if (it % 1.0 == 0.0) it.toInt().toString() else it.toString()
+    }
+
+internal fun kavitaSeriesNumber(volume: KavitaVolumeDto, chapter: KavitaChapterDto): String? =
+    kavitaNumber(volume.minNumber) ?: kavitaNumber(chapter.minNumber)
+
+internal fun kavitaChapterTitle(seriesName: String?, volume: KavitaVolumeDto, chapter: KavitaChapterDto): String =
+    chapter.titleName?.trim()?.takeIf { it.isNotEmpty() }
+        ?: chapter.title?.trim()?.takeIf { it.isNotEmpty() }
+        ?: listOfNotNull(seriesName, kavitaSeriesNumber(volume, chapter)?.let { "Book $it" })
+            .joinToString(" ")
+            .ifBlank { chapter.range.orEmpty() }
 
 internal fun kavitaPageNum(percentage: Float, pages: Int): Int =
     if (percentage >= FINISHED_PROGRESS_THRESHOLD) pages else (percentage.coerceIn(0f, 1f) * pages).roundToInt().coerceIn(0, pages)
@@ -2311,17 +2335,20 @@ class GrimmoryRepository @Inject constructor(
         } while (page.size == KAVITA_PAGE_SIZE)
 
         val base = serverUrl.trimEnd('/')
-        val metadata = kavitaMetadata(series.map { it.id })
-        return series.map { item ->
-            val meta = metadata[item.id]
-            Book(
+        val details = kavitaSeriesDetails(series.map { it.id })
+        return series.flatMap { item ->
+            val (meta, volumes) = details[item.id] ?: (null to emptyList())
+            val chapters = volumes.flatMap { volume -> volume.chapters.map { volume to it } }
+                .sortedWith(compareBy({ it.first.minNumber }, { it.second.sortOrder }))
+            val seriesAuthor = meta?.writers?.mapNotNull { it.label }?.joinToString(", ")?.takeIf { it.isNotEmpty() }
+            val seriesBook = Book(
                 id = item.id.toString(),
                 title = item.name.orEmpty(),
                 coverUrl = "$base/api/image/series-cover?seriesId=${item.id}",
                 source = BookSource.KAVITA,
                 mediaType = AppMediaType.EBOOK,
                 primaryFileType = kavitaReaderFormat(item.format),
-                author = meta?.writers?.mapNotNull { it.label }?.joinToString(", ")?.takeIf { it.isNotEmpty() },
+                author = seriesAuthor,
                 description = meta?.summary?.takeIf { it.isNotBlank() },
                 publisher = meta?.publishers?.firstNotNullOfOrNull { it.label },
                 publishedDate = meta?.releaseYear?.takeIf { it > 0 }?.toString(),
@@ -2333,39 +2360,67 @@ class GrimmoryRepository @Inject constructor(
                 addedOn = parseIsoToEpochMs(item.created) ?: 0L,
                 lastReadTime = parseIsoToEpochMs(item.latestReadDate)?.takeIf { item.pagesRead > 0 } ?: 0L,
             )
+            if (chapters.size < 2) {
+                listOf(seriesBook)
+            } else {
+                chapters.map { (volume, chapter) ->
+                    seriesBook.copy(
+                        id = kavitaBookId(item.id, chapter.id),
+                        title = kavitaChapterTitle(item.name, volume, chapter),
+                        coverUrl = "$base/api/image/chapter-cover?chapterId=${chapter.id}",
+                        author = chapter.writers.mapNotNull { it.label }.joinToString(", ")
+                            .takeIf { it.isNotEmpty() } ?: seriesAuthor,
+                        description = chapter.summary?.takeIf { it.isNotBlank() } ?: seriesBook.description,
+                        seriesName = item.name,
+                        seriesNumber = kavitaSeriesNumber(volume, chapter),
+                        pageCount = chapter.pages.takeIf { it > 0 },
+                        readProgress = if (chapter.pages > 0) {
+                            (chapter.pagesRead.toFloat() / chapter.pages).coerceIn(0f, 1f)
+                        } else {
+                            0f
+                        },
+                        lastReadTime = if (chapter.pagesRead > 0) seriesBook.lastReadTime else 0L,
+                    )
+                }
+            }
         }
     }
 
-    private suspend fun kavitaMetadata(seriesIds: List<Int>): Map<Int, KavitaSeriesMetadataDto> =
-        coroutineScope {
-            val gate = Semaphore(KAVITA_METADATA_CONCURRENCY)
-            seriesIds.map { id ->
-                async {
-                    gate.withPermit {
-                        try {
-                            api.kavitaSeriesMetadata(id).body()?.let { id to it }
-                        } catch (e: kotlinx.coroutines.CancellationException) {
-                            throw e
-                        } catch (e: Exception) {
-                            null
-                        }
-                    }
+    private suspend fun kavitaSeriesDetails(
+        seriesIds: List<Int>,
+    ): Map<Int, Pair<KavitaSeriesMetadataDto?, List<KavitaVolumeDto>>> = coroutineScope {
+        val gate = Semaphore(KAVITA_METADATA_CONCURRENCY)
+        seriesIds.map { id ->
+            async {
+                gate.withPermit {
+                    val meta = kavitaOptional { api.kavitaSeriesMetadata(id) }
+                    val volumes = kavitaOptional { api.kavitaVolumes(id) }.orEmpty()
+                    id to (meta to volumes)
                 }
-            }.awaitAll().filterNotNull().toMap()
-        }
+            }
+        }.awaitAll().toMap()
+    }
 
-    suspend fun getKavitaEbookDownloadUrl(seriesId: String): String? = withSourceContext(BookSource.KAVITA) {
+    private suspend fun <T> kavitaOptional(request: suspend () -> Response<T>): T? = try {
+        request().body()
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        null
+    }
+
+    suspend fun getKavitaEbookDownloadUrl(bookId: String): String? = withSourceContext(BookSource.KAVITA) {
         runSuspendCatching {
-            val (_, chapter) = kavitaReadingChapter(seriesId.toInt())
+            val (_, chapter) = kavitaReadingChapter(bookId)
             "${resolveScopedContext().serverUrl.trimEnd('/')}/api/Download/chapter?chapterId=${chapter.id}"
         }
     }.getOrNull()
 
-    suspend fun syncKavitaEbookProgress(seriesId: String, percentage: Float): Result<Unit> =
+    suspend fun syncKavitaEbookProgress(bookId: String, percentage: Float): Result<Unit> =
         withSourceContext(BookSource.KAVITA) {
             runSuspendCatching {
-                val id = seriesId.toInt()
-                val (volume, chapter) = kavitaReadingChapter(id)
+                val id = kavitaSeriesId(bookId)
+                val (volume, chapter) = kavitaReadingChapter(bookId)
                 val libraryId = api.kavitaSeriesDetail(id).body()?.libraryId
                     ?: error("Kavita series $id has no library")
                 val response = api.kavitaSaveProgress(
@@ -2381,10 +2436,10 @@ class GrimmoryRepository @Inject constructor(
             }
         }
 
-    suspend fun fetchKavitaEbookProgress(seriesId: String): Result<SyncSnapshot?> =
+    suspend fun fetchKavitaEbookProgress(bookId: String): Result<SyncSnapshot?> =
         withSourceContext(BookSource.KAVITA) {
             runSuspendCatching {
-                val (_, chapter) = kavitaReadingChapter(seriesId.toInt())
+                val (_, chapter) = kavitaReadingChapter(bookId)
                 val response = api.kavitaProgress(chapter.id)
                 if (!response.isSuccessful) error("Kavita progress fetch failed (HTTP ${response.code()})")
                 val pageNum = response.body()?.pageNum ?: 0
@@ -2398,12 +2453,15 @@ class GrimmoryRepository @Inject constructor(
             }
         }
 
-    private suspend fun kavitaReadingChapter(seriesId: Int): Pair<KavitaVolumeDto, KavitaChapterDto> {
+    private suspend fun kavitaReadingChapter(bookId: String): Pair<KavitaVolumeDto, KavitaChapterDto> {
+        val seriesId = kavitaSeriesId(bookId)
+        val chapterId = kavitaChapterId(bookId)
         val response = api.kavitaVolumes(seriesId)
         if (!response.isSuccessful) error("Kavita volumes failed (HTTP ${response.code()})")
-        val volume = response.body()?.firstOrNull { it.chapters.isNotEmpty() }
+        val volumes = response.body().orEmpty()
+        val volume = volumes.firstOrNull { v -> v.chapters.any { chapterId == null || it.id == chapterId } }
             ?: error("Kavita series $seriesId has no chapters")
-        return volume to volume.chapters.first()
+        return volume to volume.chapters.first { chapterId == null || it.id == chapterId }
     }
 
     private suspend fun fetchOpdsBooks(serverUrl: String): List<Book> {
