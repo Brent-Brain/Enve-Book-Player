@@ -36,6 +36,23 @@ class KavitaCatalogDtoTest {
     }
 
     @Test
+    fun decodesSeriesMetadata() {
+        val meta = json.decodeFromString<KavitaSeriesMetadataDto>(
+            """
+            {"seriesId":7,"summary":"A story.","language":"en","releaseYear":2019,
+             "writers":[{"id":1,"name":"Ann Author"},{"id":2,"name":"Bo Writer"}],
+             "genres":[{"id":3,"title":"Fantasy"}],"tags":[{"id":4,"title":"Epic"}],
+             "publishers":[{"id":5,"name":"Acme"}]}
+            """,
+        )
+
+        assertEquals(listOf("Ann Author", "Bo Writer"), meta.writers.mapNotNull { it.label })
+        assertEquals(listOf("Fantasy"), meta.genres.mapNotNull { it.label })
+        assertEquals("Acme", meta.publishers.first().label)
+        assertEquals(2019, meta.releaseYear)
+    }
+
+    @Test
     fun decodesSeriesPage() {
         val series = json.decodeFromString<List<KavitaSeriesDto>>(
             """

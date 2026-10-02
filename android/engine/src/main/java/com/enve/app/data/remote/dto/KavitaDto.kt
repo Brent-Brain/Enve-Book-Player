@@ -47,6 +47,25 @@ data class KavitaSeriesDto(
     val latestReadDate: String? = null,
 )
 
+@Serializable
+data class KavitaNamedDto(
+    val name: String? = null,
+    val title: String? = null,
+) {
+    val label: String? get() = (name ?: title)?.trim()?.takeIf { it.isNotEmpty() }
+}
+
+@Serializable
+data class KavitaSeriesMetadataDto(
+    val summary: String? = null,
+    val language: String? = null,
+    val releaseYear: Int = 0,
+    val writers: List<KavitaNamedDto> = emptyList(),
+    val genres: List<KavitaNamedDto> = emptyList(),
+    val tags: List<KavitaNamedDto> = emptyList(),
+    val publishers: List<KavitaNamedDto> = emptyList(),
+)
+
 object KavitaMangaFormat {
     const val IMAGE = 0
     const val ARCHIVE = 1

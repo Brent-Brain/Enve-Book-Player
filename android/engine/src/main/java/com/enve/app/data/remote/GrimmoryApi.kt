@@ -89,6 +89,9 @@ interface GrimmoryApi {
     @GET("api/Series/volumes")
     suspend fun kavitaVolumes(@Query("seriesId") seriesId: Int): Response<List<KavitaVolumeDto>>
 
+    @GET("api/Series/metadata")
+    suspend fun kavitaSeriesMetadata(@Query("seriesId") seriesId: Int): Response<KavitaSeriesMetadataDto>
+
     @GET("api/Series/{seriesId}")
     suspend fun kavitaSeriesDetail(@Path("seriesId") seriesId: Int): Response<KavitaSeriesDto>
 

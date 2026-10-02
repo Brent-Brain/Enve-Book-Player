@@ -92,6 +92,7 @@ private val BookSource.requiresConfiguredServer: Boolean
 private val GRIMMORY_EBOOK_PROGRESS_TYPES = setOf("EPUB", "PDF", "CBX", "FB2", "MOBI", "AZW3")
 
 private const val KAVITA_PAGE_SIZE = 100
+private const val KAVITA_METADATA_CONCURRENCY = 6
 
 private val WEBDAV_HREF = Regex("<(?:[a-z]+:)?href>(.*?)</(?:[a-z]+:)?href>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
 
@@ -2310,7 +2311,9 @@ class GrimmoryRepository @Inject constructor(
         } while (page.size == KAVITA_PAGE_SIZE)
 
         val base = serverUrl.trimEnd('/')
+        val metadata = kavitaMetadata(series.map { it.id })
         return series.map { item ->
+            val meta = metadata[item.id]
             Book(
                 id = item.id.toString(),
                 title = item.name.orEmpty(),
@@ -2318,6 +2321,12 @@ class GrimmoryRepository @Inject constructor(
                 source = BookSource.KAVITA,
                 mediaType = AppMediaType.EBOOK,
                 primaryFileType = kavitaReaderFormat(item.format),
+                author = meta?.writers?.mapNotNull { it.label }?.joinToString(", ")?.takeIf { it.isNotEmpty() },
+                description = meta?.summary?.takeIf { it.isNotBlank() },
+                publisher = meta?.publishers?.firstNotNullOfOrNull { it.label },
+                publishedDate = meta?.releaseYear?.takeIf { it > 0 }?.toString(),
+                language = meta?.language?.takeIf { it.isNotBlank() },
+                categories = meta?.let { m -> (m.genres + m.tags).mapNotNull { it.label }.distinct() }.orEmpty(),
                 libraryId = item.libraryId?.toString() ?: libraryId,
                 pageCount = item.pages.takeIf { it > 0 },
                 readProgress = if (item.pages > 0) (item.pagesRead.toFloat() / item.pages).coerceIn(0f, 1f) else 0f,
@@ -2326,6 +2335,24 @@ class GrimmoryRepository @Inject constructor(
             )
         }
     }
+
+    private suspend fun kavitaMetadata(seriesIds: List<Int>): Map<Int, KavitaSeriesMetadataDto> =
+        coroutineScope {
+            val gate = Semaphore(KAVITA_METADATA_CONCURRENCY)
+            seriesIds.map { id ->
+                async {
+                    gate.withPermit {
+                        try {
+                            api.kavitaSeriesMetadata(id).body()?.let { id to it }
+                        } catch (e: kotlinx.coroutines.CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            null
+                        }
+                    }
+                }
+            }.awaitAll().filterNotNull().toMap()
+        }
 
     suspend fun getKavitaEbookDownloadUrl(seriesId: String): String? = withSourceContext(BookSource.KAVITA) {
         runSuspendCatching {
