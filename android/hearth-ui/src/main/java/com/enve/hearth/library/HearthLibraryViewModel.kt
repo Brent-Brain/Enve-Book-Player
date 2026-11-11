@@ -11,6 +11,8 @@ import com.enve.core.data.model.Library
 import com.enve.core.data.model.ReadStatus
 import com.enve.core.data.util.FINISHED_PROGRESS_THRESHOLD
 import com.enve.engine.library.LibraryFacade
+import com.enve.engine.personal.PersonalBookState
+import com.enve.engine.personal.PersonalFacade
 import com.enve.engine.library.BookOrbitCollectionEdit
 import com.enve.engine.library.LibraryConnectionOption
 import com.enve.engine.playback.PlaybackFacade
@@ -35,7 +37,9 @@ import java.util.Locale
 import javax.inject.Inject
 
 enum class LibraryFacet { BOOKS, SERIES, AUTHORS, NARRATORS, SHELVES }
-enum class DrillKind { SERIES, AUTHOR, NARRATOR, SHELF }
+enum class DrillKind { SERIES, AUTHOR, NARRATOR, SHELF, FAVORITES }
+
+const val FAVORITES_SHELF_KEY = "enve:favorites"
 enum class StatusFilter(val label: String) {
     ALL("All"),
     CURRENTLY_READING("Currently reading"),
@@ -53,9 +57,15 @@ data class LibraryAdvancedFilters(
     val languages: Set<String> = emptySet(),
     val minimumRating: Float? = null,
     val series: SeriesFilter = SeriesFilter.ALL,
+    val favoritesOnly: Boolean = false,
+    val minimumStars: Int = 0,
+    val minimumSpice: Int = 0,
+    val yearFrom: Int? = null,
+    val yearTo: Int? = null,
 ) {
     val isActive: Boolean
-        get() = genres.isNotEmpty() || languages.isNotEmpty() || minimumRating != null || series != SeriesFilter.ALL
+        get() = genres.isNotEmpty() || languages.isNotEmpty() || minimumRating != null || series != SeriesFilter.ALL ||
+            favoritesOnly || minimumStars > 0 || minimumSpice > 0 || yearFrom != null || yearTo != null
 }
 
 data class LibraryAdvancedFilterOptions(
@@ -65,8 +75,17 @@ data class LibraryAdvancedFilterOptions(
 
 internal object LibraryAdvancedFilterPolicy {
     private val combiningMarks = "\\p{Mn}+".toRegex()
+    private val yearPattern = Regex("\\d{4}")
 
-    fun matches(book: Book, filters: LibraryAdvancedFilters): Boolean {
+    fun matches(book: Book, filters: LibraryAdvancedFilters, personal: PersonalBookState = PersonalBookState()): Boolean {
+        if (filters.favoritesOnly && !personal.favorite) return false
+        if (personal.stars < filters.minimumStars) return false
+        if (personal.spice < filters.minimumSpice) return false
+        if (filters.yearFrom != null || filters.yearTo != null) {
+            val year = publishedYear(book) ?: return false
+            if (filters.yearFrom != null && year < filters.yearFrom) return false
+            if (filters.yearTo != null && year > filters.yearTo) return false
+        }
         if (filters.genres.isNotEmpty()) {
             val selected = filters.genres.mapTo(mutableSetOf(), ::normalized)
             val bookGenres = book.categories.mapTo(mutableSetOf(), ::normalized)
@@ -89,6 +108,9 @@ internal object LibraryAdvancedFilterPolicy {
         }
         return true
     }
+
+    fun publishedYear(book: Book): Int? =
+        book.publishedDate?.let { yearPattern.find(it)?.value?.toIntOrNull() }
 
     fun options(books: List<Book>): LibraryAdvancedFilterOptions = LibraryAdvancedFilterOptions(
         genres = uniqueSorted(books.flatMap(Book::categories)),
@@ -128,6 +150,10 @@ enum class LibrarySort(val label: String, val defaultDirection: SortDirection) {
     DURATION("Duration", SortDirection.DESCENDING),
     YEAR("Published year", SortDirection.DESCENDING),
     GOODREADS_RATING("Goodreads rating", SortDirection.DESCENDING),
+    MY_STARS("My rating", SortDirection.DESCENDING),
+    SPICE("Spice", SortDirection.DESCENDING),
+    SPLASH("💦 count", SortDirection.DESCENDING),
+    FAVORITE("Favorites first", SortDirection.DESCENDING),
 }
 
 data class SortDescriptor(val field: LibrarySort, val direction: SortDirection) {
@@ -160,6 +186,7 @@ class HearthLibraryViewModel @Inject constructor(
     private val playback: PlaybackFacade,
     private val prefs: PreferencesFacade,
     private val connectionRegistry: ConnectionRegistry,
+    private val personal: PersonalFacade,
 ) : ViewModel() {
 
     val query = MutableStateFlow("")
@@ -180,6 +207,15 @@ class HearthLibraryViewModel @Inject constructor(
     val usesDefaultSorting: StateFlow<Boolean> =
         sortStack.map { it == DEFAULT_SORT }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
+    private val personalStates: StateFlow<Map<String, PersonalBookState>> =
+        personal.bookStates.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    val favoriteSeries: StateFlow<Set<String>> =
+        personal.favoriteSeries.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
+
+    val favoriteAuthors: StateFlow<Set<String>> =
+        personal.favoriteAuthors.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
 
     private val allBooks: StateFlow<List<Book>> =
         library.allBooks.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -241,8 +277,8 @@ class HearthLibraryViewModel @Inject constructor(
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val scopedBooks: StateFlow<List<Book>> =
-        combine(baseScopedBooks, advancedFilters) { books, filters ->
-            books.filter { LibraryAdvancedFilterPolicy.matches(it, filters) }
+        combine(baseScopedBooks, advancedFilters, personalStates) { books, filters, states ->
+            books.filter { LibraryAdvancedFilterPolicy.matches(it, filters, states[it.uniqueKey] ?: PersonalBookState()) }
         }.flowOn(Dispatchers.Default)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -270,13 +306,13 @@ class HearthLibraryViewModel @Inject constructor(
         }
 
     val books: StateFlow<List<Book>> =
-        combine(visibleBooks, displayFilter) { list, filter ->
+        combine(visibleBooks, displayFilter, personalStates) { list, filter, states ->
             list.asSequence()
                 .filter { matchesScope(it, filter.scope) }
                 .filter { matchesStatus(it, filter.status) }
-                .filter { LibraryAdvancedFilterPolicy.matches(it, filter.advanced) }
+                .filter { LibraryAdvancedFilterPolicy.matches(it, filter.advanced, states[it.uniqueKey] ?: PersonalBookState()) }
                 .filter { filter.query.isBlank() || matchesQuery(it, filter.query) }
-                .sortedWith(comparatorFor(filter.sort))
+                .sortedWith(comparatorFor(filter.sort, states))
                 .toList()
         }.flowOn(Dispatchers.Default)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -304,7 +340,19 @@ class HearthLibraryViewModel @Inject constructor(
         contributorGroups(list, Book::author)
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     private val _shelves = MutableStateFlow<List<BrowseGroup>>(emptyList())
-    val shelves: StateFlow<List<BrowseGroup>> = _shelves
+    val shelves: StateFlow<List<BrowseGroup>> =
+        combine(_shelves, visibleBooks, personalStates, favoriteSeries, favoriteAuthors) { server, books, states, series, authors ->
+            val favorites = favoriteBooks(books, states, series, authors)
+            listOf(
+                BrowseGroup(
+                    key = FAVORITES_SHELF_KEY,
+                    name = "Favorites",
+                    count = favorites.size,
+                    coverUrl = favorites.firstNotNullOfOrNull(Book::coverUrl),
+                    secondary = "Favorite books, series and authors",
+                ),
+            ) + server
+        }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     private val _shelvesLoading = MutableStateFlow(false)
     val shelvesLoading: StateFlow<Boolean> = _shelvesLoading
     private val _bookOrbitAdminConnections = MutableStateFlow<List<LibraryConnectionOption>>(emptyList())
@@ -385,6 +433,22 @@ class HearthLibraryViewModel @Inject constructor(
 
     fun setMinimumRating(rating: Float?) {
         setAdvancedFilters(advancedFilters.value.copy(minimumRating = rating))
+    }
+
+    fun setFavoritesOnly(enabled: Boolean) {
+        setAdvancedFilters(advancedFilters.value.copy(favoritesOnly = enabled))
+    }
+
+    fun setMinimumStars(stars: Int) {
+        setAdvancedFilters(advancedFilters.value.copy(minimumStars = stars))
+    }
+
+    fun setMinimumSpice(spice: Int) {
+        setAdvancedFilters(advancedFilters.value.copy(minimumSpice = spice))
+    }
+
+    fun setYearRange(from: Int?, to: Int?) {
+        setAdvancedFilters(advancedFilters.value.copy(yearFrom = from, yearTo = to))
     }
 
     fun setSeriesFilter(series: SeriesFilter) {
@@ -484,7 +548,43 @@ class HearthLibraryViewModel @Inject constructor(
             DrillKind.NARRATOR,
         )
     }
+    private fun favoriteBooks(
+        books: List<Book>,
+        states: Map<String, PersonalBookState>,
+        series: Set<String>,
+        authors: Set<String>,
+    ): List<Book> = books.filter { book ->
+        states[book.uniqueKey]?.favorite == true ||
+            book.seriesName?.trim()?.let { it in series } == true ||
+            contributorNames(book.author).any { it in authors }
+    }
+
+    fun openFavorites() {
+        invalidateDrill()
+        _drill.value = DrillDown(
+            "Favorites",
+            favoriteBooks(visibleBooks.value, personalStates.value, favoriteSeries.value, favoriteAuthors.value)
+                .sortedWith(comparatorFor(sortStack.value)),
+            DrillKind.FAVORITES,
+        )
+    }
+
+    fun toggleDrillFavorite() {
+        val current = _drill.value ?: return
+        viewModelScope.launch {
+            when (current.kind) {
+                DrillKind.SERIES -> personal.setSeriesFavorite(current.title, current.title !in favoriteSeries.value)
+                DrillKind.AUTHOR -> personal.setAuthorFavorite(current.title, current.title !in favoriteAuthors.value)
+                else -> Unit
+            }
+        }
+    }
+
     fun openShelf(shelf: BrowseGroup) {
+        if (shelf.key == FAVORITES_SHELF_KEY) {
+            openFavorites()
+            return
+        }
         shelfSearchJob?.cancel()
         shelfLoadJob?.cancel()
         val generation = nextDrillGeneration()
@@ -843,12 +943,15 @@ class HearthLibraryViewModel @Inject constructor(
             (b.narrator?.contains(needle, ignoreCase = true) == true)
     }
 
-    private fun comparatorFor(stack: List<SortDescriptor>): Comparator<Book> = Comparator { a, b ->
+    private fun comparatorFor(
+        stack: List<SortDescriptor>,
+        states: Map<String, PersonalBookState> = personalStates.value,
+    ): Comparator<Book> = Comparator { a, b ->
         for (descriptor in stack) {
-            val aMissing = missingSortValue(a, descriptor.field)
-            val bMissing = missingSortValue(b, descriptor.field)
+            val aMissing = missingSortValue(a, descriptor.field, states)
+            val bMissing = missingSortValue(b, descriptor.field, states)
             if (aMissing != bMissing) return@Comparator if (aMissing) 1 else -1
-            val cmp = sortComparison(a, b, descriptor.field)
+            val cmp = sortComparison(a, b, descriptor.field, states)
             if (cmp != 0) {
                 return@Comparator if (descriptor.direction == SortDirection.ASCENDING) cmp else -cmp
             }
@@ -856,7 +959,7 @@ class HearthLibraryViewModel @Inject constructor(
         a.title.compareTo(b.title, ignoreCase = true)
     }
 
-    private fun missingSortValue(b: Book, field: LibrarySort): Boolean = when (field) {
+    private fun missingSortValue(b: Book, field: LibrarySort, states: Map<String, PersonalBookState>): Boolean = when (field) {
         LibrarySort.RECENT -> b.lastReadTime <= 0L && b.addedOn <= 0L
         LibrarySort.TITLE -> b.title.isBlank()
         LibrarySort.AUTHOR, LibrarySort.AUTHOR_SURNAME -> b.author.isNullOrBlank()
@@ -866,9 +969,13 @@ class HearthLibraryViewModel @Inject constructor(
         LibrarySort.DURATION -> b.duration <= 0L
         LibrarySort.YEAR -> yearOf(b) == null
         LibrarySort.GOODREADS_RATING -> b.goodreadsRating == null
+        LibrarySort.MY_STARS -> (states[b.uniqueKey]?.stars ?: 0) == 0
+        LibrarySort.SPICE -> (states[b.uniqueKey]?.spice ?: 0) == 0
+        LibrarySort.SPLASH -> (states[b.uniqueKey]?.splash ?: 0) == 0
+        LibrarySort.FAVORITE -> false
     }
 
-    private fun sortComparison(a: Book, b: Book, field: LibrarySort): Int = when (field) {
+    private fun sortComparison(a: Book, b: Book, field: LibrarySort, states: Map<String, PersonalBookState>): Int = when (field) {
         LibrarySort.RECENT -> recentStamp(a).compareTo(recentStamp(b))
         LibrarySort.TITLE -> a.title.compareTo(b.title, ignoreCase = true)
         LibrarySort.AUTHOR -> (a.author ?: "").compareTo(b.author ?: "", ignoreCase = true)
@@ -885,6 +992,10 @@ class HearthLibraryViewModel @Inject constructor(
         LibrarySort.DURATION -> a.duration.compareTo(b.duration)
         LibrarySort.YEAR -> (yearOf(a) ?: 0).compareTo(yearOf(b) ?: 0)
         LibrarySort.GOODREADS_RATING -> (a.goodreadsRating ?: 0f).compareTo(b.goodreadsRating ?: 0f)
+        LibrarySort.MY_STARS -> (states[a.uniqueKey]?.stars ?: 0).compareTo(states[b.uniqueKey]?.stars ?: 0)
+        LibrarySort.SPICE -> (states[a.uniqueKey]?.spice ?: 0).compareTo(states[b.uniqueKey]?.spice ?: 0)
+        LibrarySort.SPLASH -> (states[a.uniqueKey]?.splash ?: 0).compareTo(states[b.uniqueKey]?.splash ?: 0)
+        LibrarySort.FAVORITE -> (states[a.uniqueKey]?.favorite == true).compareTo(states[b.uniqueKey]?.favorite == true)
     }
 
     private fun recentStamp(b: Book): Long = maxOf(b.lastReadTime, b.addedOn)
@@ -936,6 +1047,11 @@ private fun encodeAdvancedFilters(filters: LibraryAdvancedFilters): String {
         "l=${encodeFilterValues(filters.languages)}",
         "r=${filters.minimumRating ?: ""}",
         "s=${filters.series.name}",
+        "f=${if (filters.favoritesOnly) 1 else 0}",
+        "ms=${filters.minimumStars}",
+        "mp=${filters.minimumSpice}",
+        "yf=${filters.yearFrom ?: ""}",
+        "yt=${filters.yearTo ?: ""}",
     ).joinToString(";")
 }
 
@@ -954,6 +1070,11 @@ private fun decodeAdvancedFilters(encoded: String): LibraryAdvancedFilters {
         series = values["s"]
             ?.let { runCatching { SeriesFilter.valueOf(it) }.getOrNull() }
             ?: SeriesFilter.ALL,
+        favoritesOnly = values["f"] == "1",
+        minimumStars = values["ms"]?.toIntOrNull()?.coerceIn(0, 5) ?: 0,
+        minimumSpice = values["mp"]?.toIntOrNull()?.coerceIn(0, 5) ?: 0,
+        yearFrom = values["yf"]?.toIntOrNull(),
+        yearTo = values["yt"]?.toIntOrNull(),
     )
 }
 

@@ -2,6 +2,7 @@ package com.enve.hearth.library
 
 import com.enve.core.data.model.Book
 import com.enve.core.data.model.BookSource
+import com.enve.engine.personal.PersonalBookState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -82,6 +83,30 @@ class LibraryAdvancedFilterPolicyTest {
 
         assertEquals(2, options.genres.size)
         assertEquals(listOf("English"), options.languages)
+    }
+
+    @Test
+    fun personalFiltersUseFavoritesStarsAndSpice() {
+        val plain = book("plain", listOf("Romance"), "English")
+        val loved = PersonalBookState(stars = 4, spice = 3, favorite = true)
+
+        assertFalse(LibraryAdvancedFilterPolicy.matches(plain, LibraryAdvancedFilters(favoritesOnly = true)))
+        assertTrue(LibraryAdvancedFilterPolicy.matches(plain, LibraryAdvancedFilters(favoritesOnly = true), loved))
+        assertTrue(LibraryAdvancedFilterPolicy.matches(plain, LibraryAdvancedFilters(minimumStars = 4, minimumSpice = 3), loved))
+        assertFalse(LibraryAdvancedFilterPolicy.matches(plain, LibraryAdvancedFilters(minimumStars = 5), loved))
+        assertFalse(LibraryAdvancedFilterPolicy.matches(plain, LibraryAdvancedFilters(minimumSpice = 4), loved))
+    }
+
+    @Test
+    fun yearRangeNeedsAPublishedDateInsideTheBounds() {
+        val dated = book("dated", listOf("Romance"), "English").copy(publishedDate = "2019-05-01")
+        val undated = book("undated", listOf("Romance"), "English")
+        val range = LibraryAdvancedFilters(yearFrom = 2018, yearTo = 2020)
+
+        assertTrue(LibraryAdvancedFilterPolicy.matches(dated, range))
+        assertFalse(LibraryAdvancedFilterPolicy.matches(undated, range))
+        assertFalse(LibraryAdvancedFilterPolicy.matches(dated, LibraryAdvancedFilters(yearFrom = 2020)))
+        assertFalse(LibraryAdvancedFilterPolicy.matches(dated, LibraryAdvancedFilters(yearTo = 2018)))
     }
 
     private fun book(

@@ -138,6 +138,7 @@ fun BookDetailScreen(
     val notice by vm.notice.collectAsStateWithLifecycle()
     val metadataEditSupported by vm.metadataEditSupported.collectAsStateWithLifecycle()
     val personalRatingSupported by vm.personalRatingSupported.collectAsStateWithLifecycle()
+    val personal by vm.personal.collectAsStateWithLifecycle()
     val personalRatingUpdating by vm.personalRatingUpdating.collectAsStateWithLifecycle()
     val metadataQuery by vm.metadataQuery.collectAsStateWithLifecycle()
     val metadataMatches by vm.metadataMatches.collectAsStateWithLifecycle()
@@ -193,6 +194,15 @@ fun BookDetailScreen(
                     canManageBookOrbitCollections = bookOrbitCollections.isNotEmpty(),
                     onBookOrbitCollections = { showBookOrbitCollections = true },
                     onDelete = { showDeleteConfirm = true },
+                )
+            }
+            item {
+                MyRatingsSection(
+                    state = personal,
+                    onFavorite = vm::setPersonalFavorite,
+                    onStars = vm::setPersonalStars,
+                    onSpice = vm::setPersonalSpice,
+                    onSplash = vm::addSplash,
                 )
             }
             if (personalRatingSupported) {

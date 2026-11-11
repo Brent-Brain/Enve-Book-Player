@@ -156,3 +156,36 @@ data class KavitaAnnotationDto(
     val pageNumber: Int = 0,
     val createdUtc: String? = null,
 )
+
+@Serializable
+data class KavitaRatingDto(
+    val seriesId: Int,
+    val chapterId: Int? = null,
+    val userRating: Float,
+    val rating: Float,
+)
+
+@Serializable
+data class KavitaSeriesIdsDto(
+    val seriesIds: List<Int>,
+)
+
+@Serializable
+data class KavitaReadingListDto(
+    val id: Int = 0,
+    val title: String? = null,
+    val summary: String? = null,
+)
+
+@Serializable
+data class KavitaCreateReadingListDto(
+    val title: String,
+)
+
+@Serializable
+data class KavitaUpdateReadingListDto(
+    val readingListId: Int,
+    val title: String,
+    val summary: String,
+    val promoted: Boolean = false,
+)

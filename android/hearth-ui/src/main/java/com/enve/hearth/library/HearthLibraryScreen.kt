@@ -38,10 +38,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ViewList
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Download
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.FilterList
 import androidx.compose.material.icons.outlined.Folder
 import androidx.compose.material.icons.outlined.GridView
@@ -130,6 +132,8 @@ fun HearthLibraryScreen(
     val bookOrbitAdminConnections by vm.bookOrbitAdminConnections.collectAsStateWithLifecycle()
     val hasGrimmoryConnection by vm.hasGrimmoryConnection.collectAsStateWithLifecycle()
     val drill by vm.drill.collectAsStateWithLifecycle()
+    val favoriteSeries by vm.favoriteSeries.collectAsStateWithLifecycle()
+    val favoriteAuthors by vm.favoriteAuthors.collectAsStateWithLifecycle()
     val total by vm.totalCount.collectAsStateWithLifecycle()
     val refreshing by vm.isRefreshing.collectAsStateWithLifecycle()
     val columns by vm.columns.collectAsStateWithLifecycle()
@@ -219,6 +223,19 @@ fun HearthLibraryScreen(
                     Spacer(Modifier.width(Hearth.Spacing.M))
                     Text(drillNow.title, style = hearthDisplay(20.sp, FontWeight.SemiBold), color = palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Spacer(Modifier.weight(1f))
+                    if (drillNow.kind == DrillKind.SERIES || drillNow.kind == DrillKind.AUTHOR) {
+                        val favorited = if (drillNow.kind == DrillKind.SERIES) {
+                            drillNow.title in favoriteSeries
+                        } else {
+                            drillNow.title in favoriteAuthors
+                        }
+                        Icon(
+                            imageVector = if (favorited) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                            contentDescription = if (favorited) "Remove from favorites" else "Add to favorites",
+                            tint = if (favorited) palette.ember else palette.textTertiary,
+                            modifier = Modifier.clip(CircleShape).clickable { vm.toggleDrillFavorite() }.padding(8.dp),
+                        )
+                    }
                     if (drillNow.kind != DrillKind.SHELF && drillNow.books.any(::isAudioPlayable)) {
                         TextButton(onClick = {
                             if (vm.playAllDrill()) onPlaybackStarted()
@@ -1021,6 +1038,55 @@ private fun FilterSortSheet(vm: HearthLibraryViewModel, onDismiss: () -> Unit) {
                         onClick = { vm.setMinimumRating(rating) },
                     )
                 }
+            }
+
+            Overline("Favorites")
+            HearthChip("Favorites only", selected = advanced.favoritesOnly, onClick = { vm.setFavoritesOnly(!advanced.favoritesOnly) })
+
+            Overline("My rating")
+            androidx.compose.foundation.layout.FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(Hearth.Spacing.S),
+                verticalArrangement = Arrangement.spacedBy(Hearth.Spacing.S),
+            ) {
+                (0..5).forEach { stars ->
+                    HearthChip(
+                        if (stars == 0) "Any" else "$stars⭐+",
+                        selected = advanced.minimumStars == stars,
+                        onClick = { vm.setMinimumStars(stars) },
+                    )
+                }
+            }
+
+            Overline("Spice level")
+            androidx.compose.foundation.layout.FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(Hearth.Spacing.S),
+                verticalArrangement = Arrangement.spacedBy(Hearth.Spacing.S),
+            ) {
+                (0..5).forEach { spice ->
+                    HearthChip(
+                        if (spice == 0) "Any" else "$spice🌶️+",
+                        selected = advanced.minimumSpice == spice,
+                        onClick = { vm.setMinimumSpice(spice) },
+                    )
+                }
+            }
+
+            Overline("Published year")
+            Row(horizontalArrangement = Arrangement.spacedBy(Hearth.Spacing.S), verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.material3.OutlinedTextField(
+                    value = advanced.yearFrom?.toString().orEmpty(),
+                    onValueChange = { vm.setYearRange(it.filter(Char::isDigit).take(4).toIntOrNull(), advanced.yearTo) },
+                    label = { Text("From") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                )
+                androidx.compose.material3.OutlinedTextField(
+                    value = advanced.yearTo?.toString().orEmpty(),
+                    onValueChange = { vm.setYearRange(advanced.yearFrom, it.filter(Char::isDigit).take(4).toIntOrNull()) },
+                    label = { Text("To") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                )
             }
 
             Overline("Series")

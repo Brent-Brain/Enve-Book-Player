@@ -322,6 +322,12 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun providePersonalLibraryDao(db: com.enve.app.data.local.ReaderDatabase): com.enve.core.data.local.PersonalLibraryDao {
+        return db.personalLibraryDao()
+    }
+
+    @Provides
+    @Singleton
     fun provideUserCollectionDao(db: com.enve.app.data.local.ReaderDatabase): com.enve.core.data.local.UserCollectionDao {
         return db.userCollectionDao()
     }

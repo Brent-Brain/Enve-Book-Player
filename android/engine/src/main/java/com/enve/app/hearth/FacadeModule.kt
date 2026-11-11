@@ -6,6 +6,7 @@ import com.enve.engine.annotations.AnnotationsFacade
 import com.enve.engine.bookorbit.BookOrbitFacade
 import com.enve.engine.library.LibraryFacade
 import com.enve.engine.opds.OpdsCatalogFacade
+import com.enve.engine.personal.PersonalFacade
 import com.enve.engine.playback.PlaybackFacade
 import com.enve.engine.playback.PlayerSessionFacade
 import com.enve.engine.podcasts.PodcastsFacade
@@ -58,6 +59,9 @@ abstract class FacadeModule {
 
     @Binds @Singleton
     abstract fun bindOpdsCatalogFacade(impl: OpdsCatalogFacadeImpl): OpdsCatalogFacade
+
+    @Binds @Singleton
+    abstract fun bindPersonalFacade(impl: PersonalFacadeImpl): PersonalFacade
 
     @Binds @Singleton
     abstract fun bindPodcastsFacade(impl: PodcastsFacadeImpl): PodcastsFacade

@@ -92,6 +92,33 @@ interface GrimmoryApi {
     @GET("api/Series/metadata")
     suspend fun kavitaSeriesMetadata(@Query("seriesId") seriesId: Int): Response<KavitaSeriesMetadataDto>
 
+    @POST("api/Rating/series")
+    suspend fun kavitaRateSeries(@Body body: KavitaRatingDto): Response<Unit>
+
+    @POST("api/Rating/chapter")
+    suspend fun kavitaRateChapter(@Body body: KavitaRatingDto): Response<Unit>
+
+    @POST("api/want-to-read/add-series")
+    suspend fun kavitaWantToReadAdd(@Body body: KavitaSeriesIdsDto): Response<Unit>
+
+    @POST("api/want-to-read/remove-series")
+    suspend fun kavitaWantToReadRemove(@Body body: KavitaSeriesIdsDto): Response<Unit>
+
+    @POST("api/ReadingList/lists")
+    suspend fun kavitaReadingLists(
+        @Query("includePromoted") includePromoted: Boolean = true,
+        @Body filter: JsonObject = JsonObject(emptyMap()),
+    ): Response<List<KavitaReadingListDto>>
+
+    @POST("api/ReadingList/create")
+    suspend fun kavitaCreateReadingList(@Body body: KavitaCreateReadingListDto): Response<KavitaReadingListDto>
+
+    @POST("api/ReadingList/update")
+    suspend fun kavitaUpdateReadingList(@Body body: KavitaUpdateReadingListDto): Response<KavitaReadingListDto>
+
+    @GET("api/ReadingList")
+    suspend fun kavitaReadingList(@Query("readingListId") readingListId: Int): Response<KavitaReadingListDto>
+
     @GET("api/Series/{seriesId}")
     suspend fun kavitaSeriesDetail(@Path("seriesId") seriesId: Int): Response<KavitaSeriesDto>
 

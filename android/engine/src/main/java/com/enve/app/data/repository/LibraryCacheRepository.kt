@@ -4,6 +4,7 @@ import android.util.Log
 import com.enve.app.data.links.BookLinkRepository
 import com.enve.app.data.local.AppUpdateMarker
 import com.enve.app.data.metadata.MatchedBookMetadataStore
+import com.enve.app.data.personal.KavitaPersonalSync
 import com.enve.core.data.local.BookCacheDao
 import com.enve.core.data.local.BookMetadataOverride
 import com.enve.core.data.local.BookMetadataOverrideDao
@@ -54,6 +55,7 @@ class LibraryCacheRepository @Inject constructor(
     private val bookLinkRepository: BookLinkRepository,
     private val libraryRevocations: LibraryAccessRevocations,
     private val appUpdateMarker: AppUpdateMarker,
+    private val kavitaPersonalSync: KavitaPersonalSync,
 ) {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val refreshMutex = Mutex()
@@ -391,6 +393,7 @@ class LibraryCacheRepository @Inject constructor(
         }
 
         scope.launch { enrichAudiobookNarrators() }
+        scope.launch { kavitaPersonalSync.syncAll() }
     }
 
     suspend fun enrichAudiobookNarratorsNow(): Int = enrichAudiobookNarrators()

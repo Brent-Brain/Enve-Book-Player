@@ -12,6 +12,8 @@ import com.enve.engine.annotations.AnnotationsFacade
 import com.enve.engine.bookorbit.BookOrbitFacade
 import com.enve.engine.bookorbit.BookOrbitRelated
 import com.enve.engine.library.LibraryFacade
+import com.enve.engine.personal.PersonalBookState
+import com.enve.engine.personal.PersonalFacade
 import com.enve.engine.servertools.ServerToolsFacade
 import com.enve.engine.library.LibraryDownloadState
 import com.enve.engine.library.LibraryDownloadStatus
@@ -23,7 +25,9 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -34,9 +38,25 @@ class HearthDetailViewModel @Inject constructor(
     private val annotationsFacade: AnnotationsFacade,
     private val bookOrbit: BookOrbitFacade,
     private val serverTools: ServerToolsFacade,
+    private val personalFacade: PersonalFacade,
 ) : ViewModel() {
     private val _book = MutableStateFlow<Book?>(null)
     val book: StateFlow<Book?> = _book
+
+    val personal: StateFlow<PersonalBookState> =
+        kotlinx.coroutines.flow.combine(personalFacade.bookStates, _book) { states, current ->
+            current?.let { states[it.uniqueKey] } ?: PersonalBookState()
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PersonalBookState())
+
+    fun setPersonalStars(stars: Int) = withBook { personalFacade.setStars(it, stars) }
+    fun setPersonalSpice(spice: Int) = withBook { personalFacade.setSpice(it, spice) }
+    fun addSplash() = withBook { personalFacade.incrementSplash(it) }
+    fun setPersonalFavorite(favorite: Boolean) = withBook { personalFacade.setFavorite(it, favorite) }
+
+    private fun withBook(action: suspend (Book) -> Unit) {
+        val current = _book.value ?: return
+        viewModelScope.launch { action(current) }
+    }
 
     private val _detail = MutableStateFlow<Book?>(null)
     private val _linkedAudiobook = MutableStateFlow<Book?>(null)
