@@ -768,6 +768,7 @@ private fun QuickShelves(status: StatusFilter, onStatus: (StatusFilter) -> Unit)
             ShelfShortcut("Currently reading", "All media", selected = status == StatusFilter.CURRENTLY_READING) { onStatus(StatusFilter.CURRENTLY_READING) }
             ShelfShortcut("Unread", "Not marked read", selected = status == StatusFilter.UNREAD) { onStatus(StatusFilter.UNREAD) }
             ShelfShortcut("Read", "Completed", selected = status == StatusFilter.FINISHED) { onStatus(StatusFilter.FINISHED) }
+            ShelfShortcut("Favorites", "Books, series, authors", selected = status == StatusFilter.FAVORITES) { onStatus(StatusFilter.FAVORITES) }
             ShelfShortcut("Downloaded", "On this device", selected = status == StatusFilter.DOWNLOADED) { onStatus(StatusFilter.DOWNLOADED) }
         }
     }

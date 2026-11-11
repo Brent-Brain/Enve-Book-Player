@@ -48,6 +48,7 @@ enum class StatusFilter(val label: String) {
     LISTENING("Listening"),
     READING("Reading ebooks"),
     DOWNLOADED("Downloaded"),
+    FAVORITES("Favorites"),
 }
 enum class MediaFilter(val label: String) { ALL("All media"), AUDIOBOOKS("Audiobooks"), EBOOKS("Ebooks") }
 enum class SeriesFilter(val label: String) { ALL("Any"), IN_SERIES("In a series"), STANDALONE("Standalone") }
@@ -306,7 +307,7 @@ class HearthLibraryViewModel @Inject constructor(
         }
 
     val books: StateFlow<List<Book>> =
-        combine(visibleBooks, displayFilter, personalStates) { list, filter, states ->
+        combine(visibleBooks, displayFilter, personalStates, favoriteSeries, favoriteAuthors) { list, filter, states, _, _ ->
             list.asSequence()
                 .filter { matchesScope(it, filter.scope) }
                 .filter { matchesStatus(it, filter.status) }
@@ -553,11 +554,16 @@ class HearthLibraryViewModel @Inject constructor(
         states: Map<String, PersonalBookState>,
         series: Set<String>,
         authors: Set<String>,
-    ): List<Book> = books.filter { book ->
-        states[book.uniqueKey]?.favorite == true ||
-            book.seriesName?.trim()?.let { it in series } == true ||
-            contributorNames(book.author).any { it in authors }
-    }
+    ): List<Book> = books.filter { isFavorite(it, states, series, authors) }
+
+    private fun isFavorite(
+        book: Book,
+        states: Map<String, PersonalBookState>,
+        series: Set<String>,
+        authors: Set<String>,
+    ): Boolean = states[book.uniqueKey]?.favorite == true ||
+        book.seriesName?.trim()?.let { it in series } == true ||
+        contributorNames(book.author).any { it in authors }
 
     fun openFavorites() {
         invalidateDrill()
@@ -906,6 +912,7 @@ class HearthLibraryViewModel @Inject constructor(
         StatusFilter.READING -> b.mediaType == AppMediaType.EBOOK && inProgress(b)
         StatusFilter.FINISHED -> isRead(b)
         StatusFilter.DOWNLOADED -> b.isDownloaded
+        StatusFilter.FAVORITES -> isFavorite(b, personalStates.value, favoriteSeries.value, favoriteAuthors.value)
     }
 
     private fun inProgress(b: Book): Boolean =
