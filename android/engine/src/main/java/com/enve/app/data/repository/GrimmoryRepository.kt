@@ -93,7 +93,7 @@ private val BookSource.requiresConfiguredServer: Boolean
 private val GRIMMORY_EBOOK_PROGRESS_TYPES = setOf("EPUB", "PDF", "CBX", "FB2", "MOBI", "AZW3")
 
 private const val KAVITA_PAGE_SIZE = 100
-private const val KAVITA_METADATA_CONCURRENCY = 6
+private const val KAVITA_METADATA_CONCURRENCY = 12
 
 private val WEBDAV_HREF = Regex("<(?:[a-z]+:)?href>(.*?)</(?:[a-z]+:)?href>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
 
@@ -2394,9 +2394,9 @@ class GrimmoryRepository @Inject constructor(
         seriesIds.map { id ->
             async {
                 gate.withPermit {
-                    val meta = kavitaOptional { api.kavitaSeriesMetadata(id) }
-                    val volumes = kavitaOptional { api.kavitaVolumes(id) }.orEmpty()
-                    id to (meta to volumes)
+                    val meta = async { kavitaOptional { api.kavitaSeriesMetadata(id) } }
+                    val volumes = async { kavitaOptional { api.kavitaVolumes(id) }.orEmpty() }
+                    id to (meta.await() to volumes.await())
                 }
             }
         }.awaitAll().toMap()

@@ -2,6 +2,7 @@ package com.enve.app.data.repository
 
 import android.util.Log
 import com.enve.app.data.links.BookLinkRepository
+import com.enve.app.data.local.AppUpdateMarker
 import com.enve.app.data.metadata.MatchedBookMetadataStore
 import com.enve.core.data.local.BookCacheDao
 import com.enve.core.data.local.BookMetadataOverride
@@ -52,6 +53,7 @@ class LibraryCacheRepository @Inject constructor(
     private val matchedMetadataStore: MatchedBookMetadataStore,
     private val bookLinkRepository: BookLinkRepository,
     private val libraryRevocations: LibraryAccessRevocations,
+    private val appUpdateMarker: AppUpdateMarker,
 ) {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val refreshMutex = Mutex()
@@ -192,6 +194,7 @@ class LibraryCacheRepository @Inject constructor(
     }
 
     suspend fun shouldRefresh(enabledConnectionIds: List<String>, maxAgeMs: Long): Boolean {
+        if (appUpdateMarker.pending) return true
         if (dao.count() == 0) return true
         if (enabledConnectionIds.any { dao.countForConnection(it) == 0 }) return true
         if (dao.countInProgressMissingTouchTime() > 0) return true
@@ -353,6 +356,7 @@ class LibraryCacheRepository @Inject constructor(
         _isRefreshing.value = true
         _refreshError.value = null
         try {
+            if (appUpdateMarker.pending) aggregator.invalidateCaches()
             val libraries: List<Library> = aggregator.getLibraries().getOrElse {
                 Log.w(TAG, "doRefresh: aggregator.getLibraries failed: ${it.message}")
                 emptyList()
@@ -374,6 +378,7 @@ class LibraryCacheRepository @Inject constructor(
                 }
             }
             rebuildAutomaticLinks()
+            if (libraries.isNotEmpty()) appUpdateMarker.markCurrent()
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
