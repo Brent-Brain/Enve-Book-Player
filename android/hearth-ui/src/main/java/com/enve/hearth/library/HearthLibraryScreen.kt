@@ -1149,7 +1149,7 @@ private fun BookGrid(
         return
     }
     LazyVerticalGrid(
-        columns = if (listLayout) GridCells.Fixed(1) else GridCells.Fixed(columns.coerceIn(2, 4)),
+        columns = if (listLayout) GridCells.Fixed(1) else libraryGridCells(columns),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(
             start = Hearth.Spacing.XL, end = Hearth.Spacing.XL,
             top = 0.dp, bottom = LocalMantelInset.current + Hearth.Spacing.L,
@@ -1176,6 +1176,14 @@ private fun BookGrid(
     }
 }
 
+private val PhoneReferenceWidth = 360.dp
+
+private fun libraryGridCells(columns: Int): GridCells {
+    val count = columns.coerceIn(2, 4)
+    val cell = (PhoneReferenceWidth - Hearth.Spacing.XL * 2 - Hearth.Spacing.M * (count - 1)) / count
+    return GridCells.Adaptive(cell)
+}
+
 @Composable
 private fun BrowseLayout(groups: List<BrowseGroup>, columns: Int, onOpen: (BrowseGroup) -> Unit) {
     if (columns == 1 || Hearth.eink.denseListLibrary) {
@@ -1189,7 +1197,7 @@ private fun BrowseLayout(groups: List<BrowseGroup>, columns: Int, onOpen: (Brows
 private fun BrowseGrid(groups: List<BrowseGroup>, columns: Int, onOpen: (BrowseGroup) -> Unit) {
     val palette = Hearth.palette
     LazyVerticalGrid(
-        columns = GridCells.Fixed(columns.coerceIn(2, 4)),
+        columns = libraryGridCells(columns),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(
             start = Hearth.Spacing.XL,
             end = Hearth.Spacing.XL,
