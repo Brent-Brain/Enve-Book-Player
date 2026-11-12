@@ -31,7 +31,10 @@ import com.enve.app.viewmodel.ProgressConflictPrompt
 import com.enve.app.playback.PlaybackOpenProgressResolver
 import com.enve.app.playback.PlaybackProgressConflictChoice
 import com.enve.app.playback.PlayerSessionService
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import com.enve.app.data.sync.ForegroundSync
 import com.enve.app.data.sync.RecentlyPlayedSyncService
 import com.enve.core.data.local.PreferencesManager
 import dagger.hilt.android.AndroidEntryPoint
@@ -70,6 +73,9 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var playerSessionService: PlayerSessionService
 
+    @Inject
+    lateinit var foregroundSync: ForegroundSync
+
     private var skipNextResumeRefresh: Boolean = true
     private var lastRefreshAtMs: Long = 0L
 
@@ -77,6 +83,9 @@ class MainActivity : ComponentActivity() {
         val splashScreen = installSplashScreen()
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) { foregroundSync.run() }
+        }
         handleAuthCallbackIntent(intent)
         readWidgetIntent(intent)
 

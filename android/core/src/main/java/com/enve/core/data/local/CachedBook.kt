@@ -149,6 +149,9 @@ interface BookCacheDao {
     @Query("SELECT * FROM book_cache WHERE source = :source AND connectionId = :connectionId")
     suspend fun getBySourceAndConnection(source: String, connectionId: String): List<CachedBook>
 
+    @Query("SELECT * FROM book_cache WHERE connectionId = :connectionId AND (id = :seriesId OR id LIKE :seriesId || ':%')")
+    suspend fun getKavitaSeriesRows(connectionId: String, seriesId: String): List<CachedBook>
+
     @Query("SELECT * FROM book_cache WHERE mediaType = 'AUDIOBOOK' AND id IN (:bookIds)")
     suspend fun getAudiobooksByIds(bookIds: List<String>): List<CachedBook>
 
