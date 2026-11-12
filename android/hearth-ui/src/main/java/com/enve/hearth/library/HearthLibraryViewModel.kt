@@ -366,6 +366,11 @@ class HearthLibraryViewModel @Inject constructor(
             connections.any { it.enabled && it.source == BookSource.GRIMMORY }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    val signInNeeded: StateFlow<List<String>> =
+        connectionRegistry.connections.map { connections ->
+            connections.filter { it.needsReauth }.map { it.name.ifBlank { it.source.name } }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     private val _drill = MutableStateFlow<DrillDown?>(null)
     val drill: StateFlow<DrillDown?> = _drill
     private var shelfSearchJob: Job? = null

@@ -39,6 +39,7 @@ class KavitaProgressSync @Inject constructor(
     private val api: GrimmoryApi,
     private val bookCache: BookCacheDao,
     private val connectionRegistry: ConnectionRegistry,
+    private val health: ConnectionHealth,
     @ApplicationContext private val context: Context,
 ) {
     private val mutex = Mutex()
@@ -57,10 +58,12 @@ class KavitaProgressSync @Inject constructor(
                         syncConnection(connection.id, stamps[connection.id].orEmpty())
                     }
                     stamps[connection.id] = updated
+                    health.markHealthy(connection.id)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
                     Log.w(TAG, "progress sync failed for ${connection.id}: ${e.message}")
+                    if (e.isAuthFailure()) health.markRejected(connection.id)
                 }
             }
             writeStamps(stamps)
@@ -93,7 +96,7 @@ class KavitaProgressSync @Inject constructor(
         var page = 1
         do {
             val response = api.kavitaSeries(pageNumber = page, pageSize = PAGE_SIZE, filter = KavitaSeriesFilterDto.forLibrary(null))
-            if (!response.isSuccessful) error("series list failed (HTTP ${response.code()})")
+            response.requireOk("series list")
             val batch = response.body().orEmpty()
             all += batch
             page++
@@ -108,7 +111,7 @@ class KavitaProgressSync @Inject constructor(
         val chapters: Map<Int, KavitaChapterDto> =
             if (rows.any { ':' in it.id }) {
                 val response = api.kavitaVolumes(item.id)
-                if (!response.isSuccessful) error("volumes failed (HTTP ${response.code()})")
+                response.requireOk("volumes")
                 response.body().orEmpty().flatMap { it.chapters }.associateBy { it.id }
             } else {
                 emptyMap()

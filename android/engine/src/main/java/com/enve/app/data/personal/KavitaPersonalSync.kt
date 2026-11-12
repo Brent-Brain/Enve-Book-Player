@@ -8,6 +8,9 @@ import com.enve.app.data.remote.dto.KavitaReadingListDto
 import com.enve.app.data.remote.dto.KavitaSeriesIdsDto
 import com.enve.app.data.remote.dto.KavitaUpdateReadingListDto
 import com.enve.app.data.repository.kavitaChapterId
+import com.enve.app.data.sync.ConnectionHealth
+import com.enve.app.data.sync.isAuthFailure
+import com.enve.app.data.sync.requireOk
 import com.enve.app.data.repository.kavitaSeriesId
 import com.enve.core.data.local.BookPersonal
 import com.enve.core.data.local.ConnectionRegistry
@@ -40,6 +43,7 @@ class KavitaPersonalSync @Inject constructor(
     private val api: GrimmoryApi,
     private val dao: PersonalLibraryDao,
     private val connectionRegistry: ConnectionRegistry,
+    private val health: ConnectionHealth,
 ) {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val mutex = Mutex()
@@ -60,10 +64,12 @@ class KavitaPersonalSync @Inject constructor(
             connections.forEach { connection ->
                 try {
                     withContext(ConnectionScope.asContextElement(connection.id)) { sync(connection.id) }
+                    health.markHealthy(connection.id)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
                     Log.w(TAG, "sync failed for ${connection.id}: ${e.message}")
+                    if (e.isAuthFailure()) health.markRejected(connection.id)
                 }
             }
         }
@@ -118,7 +124,7 @@ class KavitaPersonalSync @Inject constructor(
             val response = api.kavitaUpdateReadingList(
                 KavitaUpdateReadingListDto(list.id, LIST_TITLE, PersonalDocumentCodec.encode(document)),
             )
-            check(response.isSuccessful) { "reading list update failed (HTTP ${response.code()})" }
+            response.requireOk("reading list update")
         }
         mirrorFavorites(rows)
     }
@@ -146,7 +152,7 @@ class KavitaPersonalSync @Inject constructor(
 
     private suspend fun findList(): KavitaReadingListDto? {
         val response = api.kavitaReadingLists()
-        if (!response.isSuccessful) error("reading lists failed (HTTP ${response.code()})")
+        response.requireOk("reading lists")
         return response.body().orEmpty().firstOrNull { it.title == LIST_TITLE }
     }
 

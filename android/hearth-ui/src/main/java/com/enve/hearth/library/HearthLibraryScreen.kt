@@ -131,6 +131,7 @@ fun HearthLibraryScreen(
     val shelvesLoading by vm.shelvesLoading.collectAsStateWithLifecycle()
     val bookOrbitAdminConnections by vm.bookOrbitAdminConnections.collectAsStateWithLifecycle()
     val hasGrimmoryConnection by vm.hasGrimmoryConnection.collectAsStateWithLifecycle()
+    val signInNeeded by vm.signInNeeded.collectAsStateWithLifecycle()
     val drill by vm.drill.collectAsStateWithLifecycle()
     val favoriteSeries by vm.favoriteSeries.collectAsStateWithLifecycle()
     val favoriteAuthors by vm.favoriteAuthors.collectAsStateWithLifecycle()
@@ -189,6 +190,23 @@ fun HearthLibraryScreen(
             ) { vm.cycleColumns() }
             HeaderGlyph(Icons.Outlined.Add, "Add a source", onClick = onAddSource)
             HeaderGlyph(Icons.Outlined.Settings, "Settings", onClick = onOpenSettings)
+        }
+        if (signInNeeded.isNotEmpty()) {
+            Row(
+                Modifier.fillMaxWidth()
+                    .padding(horizontal = Hearth.Spacing.XL)
+                    .clip(RoundedCornerShape(Hearth.Radius.Inner))
+                    .background(palette.statusWarn.copy(alpha = 0.16f))
+                    .clickable(onClick = onOpenSettings)
+                    .padding(Hearth.Spacing.M),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "Sync paused: sign in again to ${signInNeeded.joinToString()}. Tap to open Settings.",
+                    style = HearthText.Caption,
+                    color = palette.text,
+                )
+            }
         }
         val sources by vm.sources.collectAsStateWithLifecycle()
         val libraries by vm.libraries.collectAsStateWithLifecycle()
