@@ -51,7 +51,13 @@ class HearthDetailViewModel @Inject constructor(
     fun setPersonalStars(stars: Int) = withBook { personalFacade.setStars(it, stars) }
     fun setPersonalSpice(spice: Int) = withBook { personalFacade.setSpice(it, spice) }
     fun addSplash() = withBook { personalFacade.incrementSplash(it) }
-    fun setPersonalFavorite(favorite: Boolean) = withBook { personalFacade.setFavorite(it, favorite) }
+    fun setPersonalFavorite(favorite: Boolean) = withBook { book ->
+        personalFacade.setFavorite(book, favorite)
+        if (favorite) {
+            book.author.orEmpty().split(",").map(String::trim).filter(String::isNotBlank)
+                .forEach { personalFacade.setAuthorFavorite(it, true) }
+        }
+    }
 
     private fun withBook(action: suspend (Book) -> Unit) {
         val current = _book.value ?: return

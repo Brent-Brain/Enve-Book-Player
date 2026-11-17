@@ -51,6 +51,11 @@ abstract class AuthHeaderStrategyModule {
 
     @Binds
     @IntoMap
+    @TokenRefreshStrategyKey(BookSource.KAVITA)
+    abstract fun bindKavitaTokenRefreshStrategy(impl: KavitaTokenRefreshStrategy): TokenRefreshStrategy
+
+    @Binds
+    @IntoMap
     @TokenRefreshStrategyKey(BookSource.GRIMMORY)
     abstract fun bindGrimmoryTokenRefreshStrategy(impl: GrimmoryTokenRefreshStrategy): TokenRefreshStrategy
 

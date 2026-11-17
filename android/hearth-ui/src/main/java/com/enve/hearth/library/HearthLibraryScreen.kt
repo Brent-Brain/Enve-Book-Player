@@ -126,6 +126,7 @@ fun HearthLibraryScreen(
     val books by vm.books.collectAsStateWithLifecycle()
     val series by vm.series.collectAsStateWithLifecycle()
     val authors by vm.authors.collectAsStateWithLifecycle()
+    val authorSort by vm.authorSort.collectAsStateWithLifecycle()
     val narrators by vm.narrators.collectAsStateWithLifecycle()
     val shelves by vm.shelves.collectAsStateWithLifecycle()
     val shelvesLoading by vm.shelvesLoading.collectAsStateWithLifecycle()
@@ -319,7 +320,17 @@ fun HearthLibraryScreen(
                 "No authors yet",
                 "Books with author details from your servers will be grouped here.",
             )
-            facet == LibraryFacet.AUTHORS -> BrowseLayout(authors, columns) { vm.openAuthor(it.name) }
+            facet == LibraryFacet.AUTHORS -> Column(Modifier.fillMaxSize()) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = Hearth.Spacing.XL, vertical = Hearth.Spacing.S),
+                    horizontalArrangement = Arrangement.spacedBy(Hearth.Spacing.S),
+                ) {
+                    AuthorSort.entries.forEach { sort ->
+                        HearthChip(sort.label, selected = authorSort == sort, onClick = { vm.setAuthorSort(sort) })
+                    }
+                }
+                BrowseLayout(authors, columns) { vm.openAuthor(it.name) }
+            }
             facet == LibraryFacet.NARRATORS && narrators.isEmpty() -> BrowseEmptyState(
                 "No narrators yet",
                 "Audiobooks with narrator details from your servers will be grouped here.",

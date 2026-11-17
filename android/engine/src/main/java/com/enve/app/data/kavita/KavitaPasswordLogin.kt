@@ -28,6 +28,8 @@ class KavitaPasswordLogin @Inject constructor(
         val token = response.body()?.get("token")?.jsonPrimitive?.contentOrNull
             ?.takeIf { it.isNotBlank() }
             ?: error("Kavita did not return an access token")
-        prefs.saveAuth(token, null)
+        val refreshToken = response.body()?.get("refreshToken")?.jsonPrimitive?.contentOrNull
+            ?.takeIf { it.isNotBlank() }
+        prefs.saveAuth(token, refreshToken)
     }
 }

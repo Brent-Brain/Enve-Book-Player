@@ -146,8 +146,8 @@ android {
         applicationId = "com.enve.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 54
-        versionName = "1.3.1 build 54"
+        versionCode = 55
+        versionName = "1.3.2 build 55"
         buildConfigField(
             "String",
             "SOURCE_PROVENANCE",

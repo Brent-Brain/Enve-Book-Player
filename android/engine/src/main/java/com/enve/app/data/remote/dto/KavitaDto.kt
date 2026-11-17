@@ -44,6 +44,7 @@ data class KavitaSeriesDto(
     val pages: Int = 0,
     val pagesRead: Int = 0,
     val created: String? = null,
+    val lastChapterAddedUtc: String? = null,
     val latestReadDate: String? = null,
 )
 

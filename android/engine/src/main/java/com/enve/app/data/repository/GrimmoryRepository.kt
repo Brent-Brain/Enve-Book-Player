@@ -214,6 +214,7 @@ class GrimmoryRepository @Inject constructor(
     private val vault: CredentialVault,
     private val connectionRegistry: com.enve.core.data.local.ConnectionRegistry,
     private val listProgress: GrimmoryListProgressResolver,
+    private val kavitaDetailsCache: KavitaDetailsCache,
     @ApplicationContext private val context: Context,
 ) {
 
@@ -2336,7 +2337,27 @@ class GrimmoryRepository @Inject constructor(
         } while (page.size == KAVITA_PAGE_SIZE)
 
         val base = serverUrl.trimEnd('/')
-        val details = kavitaSeriesDetails(series.map { it.id })
+        val connectionId = resolveScopedContext().connectionId
+        val cached = kavitaDetailsCache.load(connectionId)
+        val reusable = series.filter { cached[it.id]?.stamp == kavitaDetailsCache.stampOf(it) }.map { it.id }.toSet()
+        val fetched = kavitaSeriesDetails(series.map { it.id }.filterNot(reusable::contains))
+        val details = series.associate { item ->
+            item.id to (
+                if (item.id in reusable) cached.getValue(item.id).let { it.metadata to it.volumes }
+                else fetched[item.id] ?: (null to emptyList())
+            )
+        }
+        val now = System.currentTimeMillis()
+        kavitaDetailsCache.save(
+            connectionId,
+            series.mapNotNull { item ->
+                val (meta, volumes) = details[item.id] ?: return@mapNotNull null
+                if (item.id in reusable) cached[item.id]
+                else if (fetched[item.id]?.let { it.first != null } == true) {
+                    KavitaCachedDetails(item.id, kavitaDetailsCache.stampOf(item), now, meta, volumes)
+                } else null
+            },
+        )
         return series.flatMap { item ->
             val (meta, volumes) = details[item.id] ?: (null to emptyList())
             val chapters = volumes.flatMap { volume -> volume.chapters.map { volume to it } }

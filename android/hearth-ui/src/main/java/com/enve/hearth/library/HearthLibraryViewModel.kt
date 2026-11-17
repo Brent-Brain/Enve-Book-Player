@@ -139,6 +139,11 @@ enum class SortDirection(val label: String, val arrow: String) {
     DESCENDING("Descending", "↓"),
 }
 
+enum class AuthorSort(val label: String) {
+    NAME("A–Z"),
+    BOOK_COUNT("Most books"),
+}
+
 enum class LibrarySort(val label: String, val defaultDirection: SortDirection) {
     RECENT("Recent", SortDirection.DESCENDING),
     TITLE("Title", SortDirection.ASCENDING),
@@ -337,8 +342,19 @@ class HearthLibraryViewModel @Inject constructor(
             .sortedBy { it.name.lowercase() }
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val authors: StateFlow<List<BrowseGroup>> = scopedBooks.map { list ->
-        contributorGroups(list, Book::author)
+    private val _authorSort = MutableStateFlow(AuthorSort.NAME)
+    val authorSort: StateFlow<AuthorSort> = _authorSort
+
+    fun setAuthorSort(sort: AuthorSort) {
+        _authorSort.value = sort
+    }
+
+    val authors: StateFlow<List<BrowseGroup>> = combine(scopedBooks, _authorSort) { list, sort ->
+        val groups = contributorGroups(list, Book::author)
+        when (sort) {
+            AuthorSort.NAME -> groups
+            AuthorSort.BOOK_COUNT -> groups.sortedWith(compareByDescending<BrowseGroup> { it.count }.thenBy { it.name.lowercase() })
+        }
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     private val _shelves = MutableStateFlow<List<BrowseGroup>>(emptyList())
     val shelves: StateFlow<List<BrowseGroup>> =
