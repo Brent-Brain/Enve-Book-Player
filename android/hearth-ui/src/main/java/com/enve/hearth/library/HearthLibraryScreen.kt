@@ -11,6 +11,10 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.grid.LazyGridState
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items as listItems
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -127,6 +131,12 @@ fun HearthLibraryScreen(
     val series by vm.series.collectAsStateWithLifecycle()
     val authors by vm.authors.collectAsStateWithLifecycle()
     val authorSort by vm.authorSort.collectAsStateWithLifecycle()
+    val seriesGridState = rememberLazyGridState()
+    val authorsGridState = rememberLazyGridState()
+    val narratorsGridState = rememberLazyGridState()
+    val seriesListState = rememberLazyListState()
+    val authorsListState = rememberLazyListState()
+    val narratorsListState = rememberLazyListState()
     val narrators by vm.narrators.collectAsStateWithLifecycle()
     val shelves by vm.shelves.collectAsStateWithLifecycle()
     val shelvesLoading by vm.shelvesLoading.collectAsStateWithLifecycle()
@@ -240,8 +250,22 @@ fun HearthLibraryScreen(
                 ) {
                     Text("‹ Back", style = HearthText.Label, color = palette.ember, modifier = Modifier.clickable { vm.clearDrill() })
                     Spacer(Modifier.width(Hearth.Spacing.M))
-                    Text(drillNow.title, style = hearthDisplay(20.sp, FontWeight.SemiBold), color = palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Spacer(Modifier.weight(1f))
+                    Text(
+                        drillNow.title,
+                        style = hearthDisplay(20.sp, FontWeight.SemiBold),
+                        color = palette.text,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (drillNow.kind != DrillKind.SHELF && drillNow.books.any(::isAudioPlayable)) {
+                        TextButton(onClick = {
+                            if (vm.playAllDrill()) onPlaybackStarted()
+                        }) { Text("Play All", color = palette.ember) }
+                    }
+                    if (drillNow.shelf?.isEditable == true) {
+                        Text("Edit", style = HearthText.Label, color = palette.ember, modifier = Modifier.clickable { collectionEditor = drillNow.shelf })
+                    }
                     if (drillNow.kind == DrillKind.SERIES || drillNow.kind == DrillKind.AUTHOR) {
                         val favorited = if (drillNow.kind == DrillKind.SERIES) {
                             drillNow.title in favoriteSeries
@@ -254,14 +278,6 @@ fun HearthLibraryScreen(
                             tint = if (favorited) palette.ember else palette.textTertiary,
                             modifier = Modifier.clip(CircleShape).clickable { vm.toggleDrillFavorite() }.padding(8.dp),
                         )
-                    }
-                    if (drillNow.kind != DrillKind.SHELF && drillNow.books.any(::isAudioPlayable)) {
-                        TextButton(onClick = {
-                            if (vm.playAllDrill()) onPlaybackStarted()
-                        }) { Text("Play All", color = palette.ember) }
-                    }
-                    if (drillNow.shelf?.isEditable == true) {
-                        Text("Edit", style = HearthText.Label, color = palette.ember, modifier = Modifier.clickable { collectionEditor = drillNow.shelf })
                     }
                 }
                 BookGrid(
@@ -315,7 +331,7 @@ fun HearthLibraryScreen(
                 "No series yet",
                 "Books with series details from your servers will be grouped here.",
             )
-            facet == LibraryFacet.SERIES -> BrowseLayout(series, columns) { vm.openSeries(it.name) }
+            facet == LibraryFacet.SERIES -> BrowseLayout(series, columns, seriesGridState, seriesListState) { vm.openSeries(it.name) }
             facet == LibraryFacet.AUTHORS && authors.isEmpty() -> BrowseEmptyState(
                 "No authors yet",
                 "Books with author details from your servers will be grouped here.",
@@ -329,13 +345,16 @@ fun HearthLibraryScreen(
                         HearthChip(sort.label, selected = authorSort == sort, onClick = { vm.setAuthorSort(sort) })
                     }
                 }
-                BrowseLayout(authors, columns) { vm.openAuthor(it.name) }
+                BrowseLayout(
+                    authors, columns, authorsGridState, authorsListState,
+                    favorites = favoriteAuthors, onToggleFavorite = { vm.toggleAuthorFavorite(it.name) },
+                ) { vm.openAuthor(it.name) }
             }
             facet == LibraryFacet.NARRATORS && narrators.isEmpty() -> BrowseEmptyState(
                 "No narrators yet",
                 "Audiobooks with narrator details from your servers will be grouped here.",
             )
-            facet == LibraryFacet.NARRATORS -> BrowseLayout(narrators, columns) { vm.openNarrator(it.name) }
+            facet == LibraryFacet.NARRATORS -> BrowseLayout(narrators, columns, narratorsGridState, narratorsListState) { vm.openNarrator(it.name) }
             facet == LibraryFacet.SHELVES -> when {
                 shelvesLoading -> BrowseLoadingState()
                 shelves.isEmpty() && bookOrbitAdminConnections.isEmpty() -> if (hasGrimmoryConnection) {
@@ -1281,18 +1300,34 @@ private fun libraryGridCells(columns: Int): GridCells {
 }
 
 @Composable
-private fun BrowseLayout(groups: List<BrowseGroup>, columns: Int, onOpen: (BrowseGroup) -> Unit) {
+private fun BrowseLayout(
+    groups: List<BrowseGroup>,
+    columns: Int,
+    gridState: LazyGridState,
+    listState: LazyListState,
+    favorites: Set<String>? = null,
+    onToggleFavorite: ((BrowseGroup) -> Unit)? = null,
+    onOpen: (BrowseGroup) -> Unit,
+) {
     if (columns == 1 || Hearth.eink.denseListLibrary) {
-        BrowseList(groups, onOpen)
+        BrowseList(groups, listState, favorites, onToggleFavorite, onOpen)
     } else {
-        BrowseGrid(groups, columns, onOpen)
+        BrowseGrid(groups, columns, gridState, favorites, onToggleFavorite, onOpen)
     }
 }
 
 @Composable
-private fun BrowseGrid(groups: List<BrowseGroup>, columns: Int, onOpen: (BrowseGroup) -> Unit) {
+private fun BrowseGrid(
+    groups: List<BrowseGroup>,
+    columns: Int,
+    state: LazyGridState,
+    favorites: Set<String>?,
+    onToggleFavorite: ((BrowseGroup) -> Unit)?,
+    onOpen: (BrowseGroup) -> Unit,
+) {
     val palette = Hearth.palette
     LazyVerticalGrid(
+        state = state,
         columns = libraryGridCells(columns),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(
             start = Hearth.Spacing.XL,
@@ -1305,7 +1340,16 @@ private fun BrowseGrid(groups: List<BrowseGroup>, columns: Int, onOpen: (BrowseG
     ) {
         items(groups, key = { it.key }) { group ->
             Column(Modifier.fillMaxWidth().clickable { onOpen(group) }) {
-                CoverTile(model = group.coverUrl, modifier = Modifier.fillMaxWidth())
+                Box(Modifier.fillMaxWidth()) {
+                    CoverTile(model = group.coverUrl, modifier = Modifier.fillMaxWidth())
+                    if (favorites != null && onToggleFavorite != null) {
+                        FavoriteHeart(
+                            favorited = group.name in favorites,
+                            onClick = { onToggleFavorite(group) },
+                            modifier = Modifier.align(Alignment.TopEnd).padding(4.dp),
+                        )
+                    }
+                }
                 Spacer(Modifier.size(Hearth.Spacing.S))
                 Text(
                     group.name,
@@ -1567,9 +1611,32 @@ private fun DenseBookRow(
 }
 
 @Composable
-private fun BrowseList(groups: List<BrowseGroup>, onOpen: (BrowseGroup) -> Unit) {
+private fun FavoriteHeart(favorited: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val palette = Hearth.palette
+    Icon(
+        imageVector = if (favorited) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+        contentDescription = if (favorited) "Remove from favorites" else "Add to favorites",
+        tint = if (favorited) palette.ember else palette.textSecondary,
+        modifier = modifier
+            .clip(CircleShape)
+            .background(palette.bg.copy(alpha = 0.6f))
+            .clickable(onClick = onClick)
+            .padding(6.dp)
+            .size(18.dp),
+    )
+}
+
+@Composable
+private fun BrowseList(
+    groups: List<BrowseGroup>,
+    state: LazyListState,
+    favorites: Set<String>?,
+    onToggleFavorite: ((BrowseGroup) -> Unit)?,
+    onOpen: (BrowseGroup) -> Unit,
+) {
     val palette = Hearth.palette
     LazyColumn(
+        state = state,
         contentPadding = androidx.compose.foundation.layout.PaddingValues(
             start = Hearth.Spacing.XL, end = Hearth.Spacing.XL, bottom = LocalMantelInset.current + Hearth.Spacing.L,
         ),
@@ -1586,6 +1653,9 @@ private fun BrowseList(groups: List<BrowseGroup>, onOpen: (BrowseGroup) -> Unit)
                     Text(g.name, style = hearthDisplay(17.sp, FontWeight.SemiBold), color = palette.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     val count = "${g.count} ${if (g.count == 1) "book" else "books"}"
                     Text(listOfNotNull(g.secondary, count).joinToString(" · "), style = HearthText.Caption, color = palette.textSecondary)
+                }
+                if (favorites != null && onToggleFavorite != null) {
+                    FavoriteHeart(favorited = g.name in favorites, onClick = { onToggleFavorite(g) })
                 }
             }
         }

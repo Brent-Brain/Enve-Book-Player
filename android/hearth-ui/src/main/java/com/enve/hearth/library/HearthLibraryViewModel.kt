@@ -596,6 +596,10 @@ class HearthLibraryViewModel @Inject constructor(
         )
     }
 
+    fun toggleAuthorFavorite(name: String) {
+        viewModelScope.launch { personal.setAuthorFavorite(name, name !in favoriteAuthors.value) }
+    }
+
     fun toggleDrillFavorite() {
         val current = _drill.value ?: return
         viewModelScope.launch {
